@@ -1,0 +1,248 @@
+import { getRequestContext } from '@cloudflare/next-on-pages'
+import type { User, Period, Application, ApplicationWithUser } from '@/types'
+
+export function getDB(): D1Database {
+	try {
+		const { env } = getRequestContext()
+		return env.DB
+	} catch (error) {
+		throw new Error('Database not available. Make sure you are running with wrangler dev or have setupDevPlatform configured.')
+	}
+}
+
+export function getR2(): R2Bucket {
+	try {
+		const { env } = getRequestContext()
+		return env.UPLOADS
+	} catch (error) {
+		throw new Error('R2 storage not available. Make sure you are running with wrangler dev or have setupDevPlatform configured.')
+	}
+}
+
+// User queries
+export async function getUserByEmail(email: string): Promise<User | null> {
+	const db = getDB()
+	const result = await db
+		.prepare('SELECT id, email, name, role, created_at, updated_at FROM users WHERE email = ?')
+		.bind(email)
+		.first<User>()
+	return result || null
+}
+
+export async function getUserById(id: number): Promise<User | null> {
+	const db = getDB()
+	const result = await db
+		.prepare('SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?')
+		.bind(id)
+		.first<User>()
+	return result || null
+}
+
+export async function getUserWithPassword(email: string): Promise<(User & { password_hash: string }) | null> {
+	const db = getDB()
+	return await db
+		.prepare('SELECT * FROM users WHERE email = ?')
+		.bind(email)
+		.first<User & { password_hash: string }>()
+}
+
+export async function createUser(email: string, passwordHash: string, name: string): Promise<User> {
+	const db = getDB()
+	const result = await db
+		.prepare('INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?) RETURNING id, email, name, role, created_at, updated_at')
+		.bind(email, passwordHash, name)
+		.first<User>()
+	
+	if (!result) {
+		throw new Error('Failed to create user')
+	}
+	return result
+}
+
+// Period queries
+export async function getAllPeriods(): Promise<Period[]> {
+	const db = getDB()
+	const result = await db
+		.prepare('SELECT * FROM periods ORDER BY created_at DESC')
+		.all<Period>()
+	return result.results || []
+}
+
+export async function getPeriodBySlug(slug: string): Promise<Period | null> {
+	const db = getDB()
+	return await db
+		.prepare('SELECT * FROM periods WHERE slug = ?')
+		.bind(slug)
+		.first<Period>()
+}
+
+export async function getPeriodById(id: number): Promise<Period | null> {
+	const db = getDB()
+	return await db
+		.prepare('SELECT * FROM periods WHERE id = ?')
+		.bind(id)
+		.first<Period>()
+}
+
+export async function getActivePeriod(): Promise<Period | null> {
+	const db = getDB()
+	return await db
+		.prepare('SELECT * FROM periods WHERE is_active = 1 LIMIT 1')
+		.first<Period>()
+}
+
+export async function createPeriod(name: string, slug: string, startDate?: string, endDate?: string): Promise<Period> {
+	const db = getDB()
+	const result = await db
+		.prepare('INSERT INTO periods (name, slug, start_date, end_date) VALUES (?, ?, ?, ?) RETURNING *')
+		.bind(name, slug, startDate || null, endDate || null)
+		.first<Period>()
+	
+	if (!result) {
+		throw new Error('Failed to create period')
+	}
+	return result
+}
+
+export async function setActivePeriod(id: number): Promise<void> {
+	const db = getDB()
+	// First, deactivate all periods
+	await db.prepare('UPDATE periods SET is_active = 0').run()
+	// Then activate the selected one
+	await db.prepare('UPDATE periods SET is_active = 1 WHERE id = ?').bind(id).run()
+}
+
+export async function deletePeriod(id: number): Promise<void> {
+	const db = getDB()
+	await db.prepare('DELETE FROM periods WHERE id = ?').bind(id).run()
+}
+
+// Application queries
+export async function getApplicationByUserAndPeriod(userId: number, periodId: number): Promise<Application | null> {
+	const db = getDB()
+	return await db
+		.prepare('SELECT * FROM applications WHERE user_id = ? AND period_id = ?')
+		.bind(userId, periodId)
+		.first<Application>()
+}
+
+export async function createApplication(userId: number, periodId: number): Promise<Application> {
+	const db = getDB()
+	const result = await db
+		.prepare('INSERT INTO applications (user_id, period_id) VALUES (?, ?) RETURNING *')
+		.bind(userId, periodId)
+		.first<Application>()
+	
+	if (!result) {
+		throw new Error('Failed to create application')
+	}
+	return result
+}
+
+export async function getOrCreateApplication(userId: number, periodId: number): Promise<Application> {
+	const existing = await getApplicationByUserAndPeriod(userId, periodId)
+	if (existing) {
+		return existing
+	}
+	return createApplication(userId, periodId)
+}
+
+export async function updateApplicationDocument(
+	applicationId: number,
+	documentType: 'cv' | 'recommendation' | 'motivation' | 'criminal_record',
+	url: string | null,
+	charCount?: number
+): Promise<void> {
+	const db = getDB()
+	const now = new Date().toISOString()
+	
+	let query: string
+	let params: (string | number | null)[]
+	
+	switch (documentType) {
+		case 'cv':
+			query = 'UPDATE applications SET cv_url = ?, cv_uploaded_at = ?, updated_at = ? WHERE id = ?'
+			params = [url, now, now, applicationId]
+			break
+		case 'recommendation':
+			query = 'UPDATE applications SET recommendation_url = ?, recommendation_uploaded_at = ?, updated_at = ? WHERE id = ?'
+			params = [url, now, now, applicationId]
+			break
+		case 'motivation':
+			query = 'UPDATE applications SET motivation_letter = ?, motivation_letter_char_count = ?, motivation_uploaded_at = ?, updated_at = ? WHERE id = ?'
+			params = [url, charCount || 0, now, now, applicationId]
+			break
+		case 'criminal_record':
+			query = 'UPDATE applications SET criminal_record_url = ?, criminal_record_uploaded_at = ?, updated_at = ? WHERE id = ?'
+			params = [url, now, now, applicationId]
+			break
+	}
+	
+	await db.prepare(query).bind(...params).run()
+}
+
+export async function updateApplicationStatus(applicationId: number, status: Application['status']): Promise<void> {
+	const db = getDB()
+	await db
+		.prepare('UPDATE applications SET status = ?, updated_at = ? WHERE id = ?')
+		.bind(status, new Date().toISOString(), applicationId)
+		.run()
+}
+
+export async function getApplicationsByPeriod(periodId: number): Promise<ApplicationWithUser[]> {
+	const db = getDB()
+	const result = await db
+		.prepare(`
+			SELECT 
+				a.*,
+				u.email as user_email,
+				u.name as user_name,
+				p.name as period_name
+			FROM applications a
+			JOIN users u ON a.user_id = u.id
+			JOIN periods p ON a.period_id = p.id
+			WHERE a.period_id = ?
+			ORDER BY a.created_at DESC
+		`)
+		.bind(periodId)
+		.all<ApplicationWithUser>()
+	
+	return result.results || []
+}
+
+export async function getAllApplications(): Promise<ApplicationWithUser[]> {
+	const db = getDB()
+	const result = await db
+		.prepare(`
+			SELECT 
+				a.*,
+				u.email as user_email,
+				u.name as user_name,
+				p.name as period_name
+			FROM applications a
+			JOIN users u ON a.user_id = u.id
+			JOIN periods p ON a.period_id = p.id
+			ORDER BY a.created_at DESC
+		`)
+		.all<ApplicationWithUser>()
+	
+	return result.results || []
+}
+
+export async function getApplicationById(id: number): Promise<ApplicationWithUser | null> {
+	const db = getDB()
+	return await db
+		.prepare(`
+			SELECT 
+				a.*,
+				u.email as user_email,
+				u.name as user_name,
+				p.name as period_name
+			FROM applications a
+			JOIN users u ON a.user_id = u.id
+			JOIN periods p ON a.period_id = p.id
+			WHERE a.id = ?
+		`)
+		.bind(id)
+		.first<ApplicationWithUser>()
+}

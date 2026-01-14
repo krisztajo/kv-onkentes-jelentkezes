@@ -1,0 +1,41 @@
+{
+	"name": "kv-onkentes-jelentkezes",
+	"version": "1.0.0",
+	"private": true,
+	"scripts": {
+		"dev": "next dev",
+		"build": "next build",
+		"build:cloudflare": "npx @opennextjs/cloudflare build && node scripts/patch-worker.mjs",
+		"start": "next start",
+		"lint": "next lint",
+		"preview": "npm run build:cloudflare && wrangler dev",
+		"deploy": "npm run build:cloudflare && wrangler deploy",
+		"db:migrate:local": "wrangler d1 execute volunteer-db --local --file=./migrations/0001_init.sql",
+		"db:migrate:prod": "wrangler d1 execute volunteer-db --file=./migrations/0001_init.sql"
+	},
+	"dependencies": {
+		"@cloudflare/next-on-pages": "^1.13.6",
+		"bcryptjs": "^2.4.3",
+		"jose": "^5.2.0",
+		"next": "15.1.11",
+		"react": "^18.2.0",
+		"react-dom": "^18.2.0",
+		"zod": "^3.22.4"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20260114.0",
+		"@opennextjs/cloudflare": "^0.5.0",
+		"@tailwindcss/forms": "^0.5.7",
+		"@types/bcryptjs": "^2.4.6",
+		"@types/node": "^20.11.0",
+		"@types/react": "^18.2.0",
+		"@types/react-dom": "^18.2.0",
+		"autoprefixer": "^10.4.17",
+		"eslint": "^8.56.0",
+		"eslint-config-next": "15.1.11",
+		"postcss": "^8.4.33",
+		"tailwindcss": "^3.4.1",
+		"typescript": "^5.3.3",
+		"wrangler": "^3.100.0"
+	}
+}
