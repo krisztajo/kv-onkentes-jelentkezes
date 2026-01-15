@@ -14,6 +14,7 @@ interface FileUploadProps {
 	templateLabel?: string
 	isLoading?: boolean
 	error?: string
+	disabled?: boolean
 }
 
 export function FileUpload({
@@ -27,6 +28,7 @@ export function FileUpload({
 	templateLabel,
 	isLoading,
 	error,
+	disabled,
 }: FileUploadProps) {
 	const [dragActive, setDragActive] = useState(false)
 	const [localError, setLocalError] = useState<string | null>(null)
@@ -109,7 +111,9 @@ export function FileUpload({
 			
 			<div
 				className={`relative border-2 border-dashed rounded-xl p-6 text-center transition-all duration-200 ${
-					dragActive
+					disabled
+						? 'opacity-60 cursor-not-allowed bg-surface-50'
+						: dragActive
 						? 'border-primary-500 bg-primary-50'
 						: uploadedUrl
 						? 'border-accent-300 bg-accent-50/50'
@@ -117,10 +121,10 @@ export function FileUpload({
 						? 'border-red-300 bg-red-50/50'
 						: 'border-surface-200 hover:border-primary-300 hover:bg-surface-50'
 				}`}
-				onDragEnter={handleDrag}
-				onDragLeave={handleDrag}
-				onDragOver={handleDrag}
-				onDrop={handleDrop}
+				onDragEnter={disabled ? undefined : handleDrag}
+				onDragLeave={disabled ? undefined : handleDrag}
+				onDragOver={disabled ? undefined : handleDrag}
+				onDrop={disabled ? undefined : handleDrop}
 			>
 				<input
 					ref={inputRef}
@@ -128,7 +132,7 @@ export function FileUpload({
 					accept={accept}
 					onChange={handleChange}
 					className="hidden"
-					disabled={isLoading}
+					disabled={isLoading || disabled}
 				/>
 				
 				{uploadedUrl ? (
@@ -154,14 +158,16 @@ export function FileUpload({
 							>
 								Megtekintés
 							</Button>
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={() => inputRef.current?.click()}
-								disabled={isLoading}
-							>
-								Csere
-							</Button>
+							{!disabled && (
+								<Button
+									variant="ghost"
+									size="sm"
+									onClick={() => inputRef.current?.click()}
+									disabled={isLoading}
+								>
+									Csere
+								</Button>
+							)}
 						</div>
 					</div>
 				) : (
@@ -182,9 +188,9 @@ export function FileUpload({
 						</div>
 						<div>
 							<p className="text-sm text-surface-600">
-								{isLoading ? 'Feltöltés folyamatban...' : 'Húzd ide a fájlt vagy'}
+								{isLoading ? 'Feltöltés folyamatban...' : disabled ? 'Feltöltés nem lehetséges' : 'Húzd ide a fájlt vagy'}
 							</p>
-							{!isLoading && (
+							{!isLoading && !disabled && (
 								<button
 									type="button"
 									onClick={() => inputRef.current?.click()}

@@ -25,6 +25,27 @@ export async function GET(request: NextRequest) {
 			)
 		}
 		
+		// Check if period is active - only allow access if active
+		if (!period.is_active) {
+			// Check if user has an existing application for this period
+			const existingApp = await getApplicationByUserAndPeriod(user.id, period.id)
+			if (!existingApp) {
+				return NextResponse.json(
+					{ success: false, error: 'Ez a jelentkezési időszak már nem aktív' },
+					{ status: 403 }
+				)
+			}
+			// Allow viewing existing application but mark it as readonly
+			return NextResponse.json({
+				success: true,
+				data: {
+					application: existingApp,
+					period,
+					readonly: true,
+				},
+			})
+		}
+		
 		// Get or create application for this user and period
 		const application = await getOrCreateApplication(user.id, period.id)
 		
@@ -33,6 +54,7 @@ export async function GET(request: NextRequest) {
 			data: {
 				application,
 				period,
+				readonly: false,
 			},
 		})
 	} catch (error) {

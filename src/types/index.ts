@@ -26,11 +26,15 @@ export interface Application {
 	cv_uploaded_at: string | null
 	recommendation_url: string | null
 	recommendation_uploaded_at: string | null
+	recommendation_url_2: string | null
+	recommendation_uploaded_at_2: string | null
 	motivation_letter: string | null
 	motivation_letter_char_count: number | null
 	motivation_uploaded_at: string | null
 	criminal_record_url: string | null
 	criminal_record_uploaded_at: string | null
+	criminal_record_request_url: string | null
+	criminal_record_request_uploaded_at: string | null
 	status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'
 	created_at: string
 	updated_at: string
@@ -42,7 +46,7 @@ export interface ApplicationWithUser extends Application {
 	period_name: string
 }
 
-export type DocumentType = 'cv' | 'recommendation' | 'motivation' | 'criminal_record'
+export type DocumentType = 'cv' | 'recommendation' | 'recommendation_2' | 'motivation' | 'criminal_record' | 'criminal_record_request'
 
 export interface UploadResult {
 	success: boolean

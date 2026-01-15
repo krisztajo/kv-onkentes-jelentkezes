@@ -40,8 +40,7 @@ export default async function HomePage() {
                 className="text-lg sm:text-xl text-surface-600 mb-10 animate-slide-up"
                 style={{ animationDelay: "0.1s" }}
               >
-                Csatlakozz önkéntes közösségünkhöz! Töltsd ki a jelentkezési
-                űrlapot és légy részese valami nagyszerűnek.
+                Csatlakozz önkéntes közösségünkhöz! Töltsd fel a jelentkezéshez szükséges dokumentumokat!
               </p>
 
               <div
@@ -49,9 +48,9 @@ export default async function HomePage() {
                 style={{ animationDelay: "0.2s" }}
               >
                 {activePeriod ? (
-                  <Link href={`/register?period=${activePeriod.slug}`}>
+                  <Link href={user ? `/apply?period=${activePeriod.slug}` : `/register?period=${activePeriod.slug}`}>
                     <Button variant="primary" size="lg">
-                      Jelentkezés ({activePeriod.name})
+                      {user ? 'Folytatás' : 'Jelentkezés'} ({activePeriod.name})
                     </Button>
                   </Link>
                 ) : (

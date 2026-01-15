@@ -112,9 +112,59 @@ export async function setActivePeriod(id: number): Promise<void> {
 	await db.prepare('UPDATE periods SET is_active = 1 WHERE id = ?').bind(id).run()
 }
 
+export async function deactivatePeriod(id: number): Promise<void> {
+	const db = getDB()
+	await db.prepare('UPDATE periods SET is_active = 0 WHERE id = ?').bind(id).run()
+}
+
 export async function deletePeriod(id: number): Promise<void> {
 	const db = getDB()
 	await db.prepare('DELETE FROM periods WHERE id = ?').bind(id).run()
+}
+
+// Admin user management
+export async function getAllUsers(): Promise<User[]> {
+	const db = getDB()
+	const result = await db
+		.prepare('SELECT id, email, name, role, created_at, updated_at FROM users ORDER BY created_at DESC')
+		.all<User>()
+	return result.results || []
+}
+
+export async function createAdminUser(email: string, passwordHash: string, name: string): Promise<User> {
+	const db = getDB()
+	const result = await db
+		.prepare('INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?) RETURNING id, email, name, role, created_at, updated_at')
+		.bind(email, passwordHash, name, 'admin')
+		.first<User>()
+	
+	if (!result) {
+		throw new Error('Failed to create admin user')
+	}
+	return result
+}
+
+export async function updateUserPassword(userId: number, newPasswordHash: string): Promise<void> {
+	const db = getDB()
+	await db
+		.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?')
+		.bind(newPasswordHash, new Date().toISOString(), userId)
+		.run()
+}
+
+export async function getUserApplications(userId: number): Promise<Application[]> {
+	const db = getDB()
+	const result = await db
+		.prepare(`
+			SELECT a.*, p.name as period_name, p.is_active as period_is_active
+			FROM applications a
+			JOIN periods p ON a.period_id = p.id
+			WHERE a.user_id = ?
+			ORDER BY a.created_at DESC
+		`)
+		.bind(userId)
+		.all<Application & { period_name: string; period_is_active: number }>()
+	return result.results || []
 }
 
 // Application queries
@@ -149,7 +199,7 @@ export async function getOrCreateApplication(userId: number, periodId: number): 
 
 export async function updateApplicationDocument(
 	applicationId: number,
-	documentType: 'cv' | 'recommendation' | 'motivation' | 'criminal_record',
+	documentType: 'cv' | 'recommendation' | 'recommendation_2' | 'motivation' | 'criminal_record' | 'criminal_record_request',
 	url: string | null,
 	charCount?: number
 ): Promise<void> {
@@ -168,12 +218,20 @@ export async function updateApplicationDocument(
 			query = 'UPDATE applications SET recommendation_url = ?, recommendation_uploaded_at = ?, updated_at = ? WHERE id = ?'
 			params = [url, now, now, applicationId]
 			break
+		case 'recommendation_2':
+			query = 'UPDATE applications SET recommendation_url_2 = ?, recommendation_uploaded_at_2 = ?, updated_at = ? WHERE id = ?'
+			params = [url, now, now, applicationId]
+			break
 		case 'motivation':
 			query = 'UPDATE applications SET motivation_letter = ?, motivation_letter_char_count = ?, motivation_uploaded_at = ?, updated_at = ? WHERE id = ?'
 			params = [url, charCount || 0, now, now, applicationId]
 			break
 		case 'criminal_record':
 			query = 'UPDATE applications SET criminal_record_url = ?, criminal_record_uploaded_at = ?, updated_at = ? WHERE id = ?'
+			params = [url, now, now, applicationId]
+			break
+		case 'criminal_record_request':
+			query = 'UPDATE applications SET criminal_record_request_url = ?, criminal_record_request_uploaded_at = ?, updated_at = ? WHERE id = ?'
 			params = [url, now, now, applicationId]
 			break
 	}

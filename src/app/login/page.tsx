@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/card'
 
-export default function LoginPage() {
+function LoginPageInner() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const period = searchParams.get('period')
@@ -42,7 +42,19 @@ export default function LoginPage() {
 			} else if (period) {
 				router.push(`/apply?period=${period}`)
 			} else {
-				router.push('/')
+				// Get active period and redirect to apply
+				try {
+					const periodsRes = await fetch('/api/periods')
+					const periodsData = await periodsRes.json() as { success: boolean; data?: { slug: string; is_active: boolean }[] }
+					const activePeriod = periodsData.data?.find(p => p.is_active)
+					if (activePeriod) {
+						router.push(`/apply?period=${activePeriod.slug}`)
+					} else {
+						router.push('/')
+					}
+				} catch {
+					router.push('/')
+				}
 			}
 			router.refresh()
 		} catch (err) {
@@ -121,5 +133,14 @@ export default function LoginPage() {
 				</form>
 			</Card>
 		</div>
+	)
+
+}
+
+export default function LoginPage() {
+	return (
+		<Suspense>
+			<LoginPageInner />
+		</Suspense>
 	)
 }

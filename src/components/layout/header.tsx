@@ -52,10 +52,15 @@ export function Header({ user }: HeaderProps) {
 									</Link>
 								)}
 								<div className="flex items-center gap-3">
-									<div className="text-right">
+									<Link href="/profile" className="text-right hover:opacity-80 transition-opacity">
 										<p className="text-sm font-medium text-surface-900">{user.name}</p>
 										<p className="text-xs text-surface-500">{user.email}</p>
-									</div>
+									</Link>
+									<Link href="/profile">
+										<Button variant="ghost" size="sm">
+											Profil
+										</Button>
+									</Link>
 									<Button
 										variant="ghost"
 										size="sm"

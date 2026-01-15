@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -10,7 +11,7 @@ import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { Application, Period, User } from '@/types'
 
-export default function ApplyPage() {
+function ApplyPageInner() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const periodSlug = searchParams.get('period')
@@ -24,6 +25,11 @@ export default function ApplyPage() {
 	const [uploadingDoc, setUploadingDoc] = useState<string | null>(null)
 	const [savingMotivation, setSavingMotivation] = useState(false)
 	const [motivationError, setMotivationError] = useState('')
+	const [isReadonly, setIsReadonly] = useState(false)
+	const [isSubmitting, setIsSubmitting] = useState(false)
+	const [submitSuccess, setSubmitSuccess] = useState(false)
+	const [showSuccessModal, setShowSuccessModal] = useState(false)
+	const [successModalMessage, setSuccessModalMessage] = useState('')
 	
 	useEffect(() => {
 		async function loadData() {
@@ -47,7 +53,11 @@ export default function ApplyPage() {
 				
 				// Get application data
 				const appRes = await fetch(`/api/applications/my?period=${periodSlug}`)
-				const appData = await appRes.json() as { success: boolean; error?: string; data?: { period: Period; application: Application } }
+				const appData = await appRes.json() as { 
+					success: boolean
+					error?: string
+					data?: { period: Period; application: Application; readonly?: boolean } 
+				}
 				
 				if (!appData.success) {
 					setError(appData.error || 'Hiba történt')
@@ -58,6 +68,7 @@ export default function ApplyPage() {
 				setPeriod(appData.data?.period || null)
 				setApplication(appData.data?.application || null)
 				setMotivationText(appData.data?.application?.motivation_letter || '')
+				setIsReadonly(appData.data?.readonly || false)
 			} catch (err) {
 				setError('Hiba történt az adatok betöltésekor')
 			} finally {
@@ -69,7 +80,7 @@ export default function ApplyPage() {
 	}, [periodSlug, router])
 	
 	const handleFileUpload = async (file: File, documentType: string) => {
-		if (!periodSlug) return
+		if (!periodSlug || isReadonly) return
 		
 		setUploadingDoc(documentType)
 		
@@ -105,7 +116,7 @@ export default function ApplyPage() {
 	}
 	
 	const handleSaveMotivation = async () => {
-		if (!periodSlug) return
+		if (!periodSlug || isReadonly) return
 		
 		setMotivationError('')
 		
@@ -146,6 +157,7 @@ export default function ApplyPage() {
 			if (appData.success && appData.data) {
 				setApplication(appData.data.application)
 			}
+			// No modal for motivation save - only for final submit
 		} catch (err) {
 			setMotivationError('Hiba történt a mentés során')
 		} finally {
@@ -153,24 +165,80 @@ export default function ApplyPage() {
 		}
 	}
 	
-	const isDocumentUploaded = (type: 'cv' | 'recommendation' | 'motivation' | 'criminal_record') => {
+	const handleSubmitApplication = async () => {
+		if (!application || isReadonly) return
+		
+		setIsSubmitting(true)
+		
+		try {
+			const res = await fetch(`/api/applications/${application.id}`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ status: 'submitted' }),
+			})
+			
+			const data = await res.json() as { success: boolean; data?: Application }
+			
+			if (data.success && data.data) {
+				setApplication(data.data)
+				setSubmitSuccess(true)
+				// Ha minden kötelező dokumentum megvan, "véglegesítés", különben "mentés"
+				const allDocsUploaded = data.data.cv_url && data.data.recommendation_url && 
+					data.data.recommendation_url_2 && data.data.motivation_letter && data.data.criminal_record_url
+				setSuccessModalMessage(allDocsUploaded ? 'Sikeres véglegesítés!' : 'Sikeres mentés!')
+				setShowSuccessModal(true)
+			}
+		} catch (err) {
+			console.error('Submit error:', err)
+		} finally {
+			setIsSubmitting(false)
+		}
+	}
+	
+	const isDocumentUploaded = (type: 'cv' | 'recommendation' | 'recommendation_2' | 'motivation' | 'criminal_record' | 'criminal_record_request') => {
 		if (!application) return false
 		switch (type) {
 			case 'cv': return !!application.cv_url
 			case 'recommendation': return !!application.recommendation_url
+			case 'recommendation_2': return !!application.recommendation_url_2
 			case 'motivation': return !!application.motivation_letter
 			case 'criminal_record': return !!application.criminal_record_url
+			case 'criminal_record_request': return !!application.criminal_record_request_url
 		}
 	}
 	
-	const getUploadedCount = () => {
+	// Count of REQUIRED documents (5: CV, 2 ajánlólevél, motiváció, erkölcsi)
+	const getRequiredUploadedCount = () => {
 		if (!application) return 0
 		let count = 0
 		if (application.cv_url) count++
 		if (application.recommendation_url) count++
+		if (application.recommendation_url_2) count++
 		if (application.motivation_letter) count++
 		if (application.criminal_record_url) count++
 		return count
+	}
+
+	const getUploadedCount = () => {
+		return getRequiredUploadedCount()
+	}
+
+	const REQUIRED_DOC_COUNT = 5
+	
+	const isAllRequiredUploaded = () => {
+		return getRequiredUploadedCount() >= REQUIRED_DOC_COUNT
+	}
+	
+	const isApplicationStarted = () => {
+		if (!application) return false
+		return application.cv_url || application.recommendation_url || application.recommendation_url_2 ||
+			application.motivation_letter || application.criminal_record_url || application.criminal_record_request_url
+	}
+	
+	const handleLogout = async () => {
+		await fetch('/api/auth/logout', { method: 'POST' })
+		router.push('/')
+		router.refresh()
 	}
 	
 	if (loading) {
@@ -203,208 +271,414 @@ export default function ApplyPage() {
 		)
 	}
 	
-	return (
-		<div className="min-h-screen bg-gradient-to-br from-surface-50 via-primary-50/30 to-accent-50/20">
-			{/* Header */}
-			<header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-surface-100">
-				<div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-					<div className="flex items-center justify-between h-16">
-						<Link href="/" className="flex items-center gap-3">
-							<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/25">
-								<svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-								</svg>
-							</div>
-							<span className="text-lg font-semibold text-surface-900">Jelentkezés</span>
-						</Link>
-						
-						<div className="flex items-center gap-3">
-							<span className="text-sm text-surface-600">{user?.name}</span>
-							<Badge variant={getUploadedCount() === 4 ? 'success' : 'warning'}>
-								{getUploadedCount()}/4 dokumentum
-							</Badge>
+	// Success state after submission
+	/*if (submitSuccess && application?.status === 'submitted') {
+		return (
+			<div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-surface-50 via-primary-50/30 to-accent-50/20">
+				<Card className="max-w-md text-center">
+					<CardContent className="pt-8 pb-8">
+						<div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
+							<svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+							</svg>
 						</div>
+						<h2 className="text-2xl font-bold text-surface-900 mb-2">Jelentkezésed beküldve!</h2>
+						<p className="text-surface-600 mb-6">
+							Köszönjük a jelentkezésedet. Hamarosan értesítünk a döntésről.
+						</p>
+						<Link href="/">
+							<Button variant="primary">
+								Vissza a főoldalra
+							</Button>
+						</Link>
+					</CardContent>
+				</Card>
+			</div>
+		)
+	}*/
+	
+	type SuccessModalProps = {
+		open: boolean;
+		onClose: () => void;
+		onLogout: () => void;
+		message: string;
+	};
+
+	function SuccessModal({ open, onClose, onLogout, message }: SuccessModalProps) {
+		if (!open) return null;
+		return (
+			<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+				<div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-8 text-center relative animate-fade-in">
+					<div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+						<svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+						</svg>
+					</div>
+					<h2 className="text-xl font-bold text-surface-900 mb-2">{message}</h2>
+					<div className="flex flex-col gap-3 mt-6">
+						<button
+							className="bg-primary-600 hover:bg-primary-700 text-white font-semibold py-2 px-4 rounded-lg transition"
+							onClick={onLogout}
+						>
+							Kijelentkezés
+						</button>
+						<button
+							className="text-surface-500 hover:text-surface-900 text-sm underline mt-1"
+							onClick={onClose}
+						>
+							Bezárás
+						</button>
 					</div>
 				</div>
-			</header>
-			
-			<main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-				{/* Period Info */}
-				<Card className="mb-8">
-					<CardContent className="py-6">
-						<div className="flex items-center justify-between">
-							<div>
-								<h1 className="text-2xl font-display font-bold text-surface-900">
-									Önkéntes képzés jelentkezés
-								</h1>
-								<p className="text-surface-600 mt-1">
-									Időszak: <span className="font-semibold text-primary-600">{period?.name}</span>
-								</p>
-							</div>
-							<div className="text-right">
-								<p className="text-sm text-surface-500">Állapot</p>
-								<Badge variant={application?.status === 'submitted' ? 'success' : 'info'}>
-									{application?.status === 'draft' && 'Piszkozat'}
-									{application?.status === 'submitted' && 'Beküldve'}
-									{application?.status === 'under_review' && 'Elbírálás alatt'}
-									{application?.status === 'approved' && 'Elfogadva'}
-									{application?.status === 'rejected' && 'Elutasítva'}
+			</div>
+		);
+	}
+	
+	return (
+		<Suspense>
+			<>
+				<SuccessModal
+					open={showSuccessModal}
+					onClose={() => setShowSuccessModal(false)}
+					onLogout={handleLogout}
+					message={successModalMessage}
+				/>
+				<div className="min-h-screen bg-gradient-to-br from-surface-50 via-primary-50/30 to-accent-50/20">
+				{/* Header */}
+				<header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-surface-100">
+					<div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+						<div className="flex items-center justify-between h-16">
+							<Link href="/" className="flex items-center gap-3">
+								<div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/25">
+									<svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+										<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+									</svg>
+								</div>
+								<span className="text-lg font-semibold text-surface-900">Jelentkezés</span>
+							</Link>
+							
+							<div className="flex items-center gap-3">
+								<Link href="/profile">
+									<span className="text-sm text-surface-600 hover:text-surface-900 cursor-pointer">{user?.name}</span>
+								</Link>
+								<Badge variant={getRequiredUploadedCount() === REQUIRED_DOC_COUNT ? 'success' : 'warning'}>
+									{getRequiredUploadedCount()}/{REQUIRED_DOC_COUNT} dokumentum
 								</Badge>
-							</div>
-						</div>
-					</CardContent>
-				</Card>
-				
-				{/* Documents */}
-				<div className="space-y-6">
-					{/* CV */}
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<h2 className="text-lg font-semibold text-surface-900">Önéletrajz (CV)</h2>
-								{isDocumentUploaded('cv') && (
-									<Badge variant="success">Feltöltve</Badge>
-								)}
-							</div>
-						</CardHeader>
-						<CardContent>
-							<FileUpload
-								label=""
-								description="Töltsd fel az önéletrajzodat PDF vagy képformátumban"
-								onUpload={(file) => handleFileUpload(file, 'cv')}
-								uploadedUrl={application?.cv_url}
-								uploadedAt={application?.cv_uploaded_at}
-								isLoading={uploadingDoc === 'cv'}
-							/>
-						</CardContent>
-					</Card>
-					
-					{/* Recommendation Letter */}
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<h2 className="text-lg font-semibold text-surface-900">Ajánlólevél</h2>
-								{isDocumentUploaded('recommendation') && (
-									<Badge variant="success">Feltöltve</Badge>
-								)}
-							</div>
-						</CardHeader>
-						<CardContent>
-							<FileUpload
-								label=""
-								description="Töltsd fel az ajánlólevelet. A sablon letölthető a bal oldalon."
-								onUpload={(file) => handleFileUpload(file, 'recommendation')}
-								uploadedUrl={application?.recommendation_url}
-								uploadedAt={application?.recommendation_uploaded_at}
-								templateUrl="/templates/ajanlolevely-sablon.pdf"
-								templateLabel="Sablon letöltése"
-								isLoading={uploadingDoc === 'recommendation'}
-							/>
-						</CardContent>
-					</Card>
-					
-					{/* Motivation Letter */}
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<h2 className="text-lg font-semibold text-surface-900">Motivációs levél</h2>
-								{isDocumentUploaded('motivation') && (
-									<Badge variant="success">Mentve</Badge>
-								)}
-							</div>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<Textarea
-								label=""
-								placeholder="Írd meg a motivációs leveledet... (minimum 1000, maximum 2500 karakter)"
-								value={motivationText}
-								onChange={(e) => setMotivationText(e.target.value)}
-								charCount={motivationText.length}
-								minChars={1000}
-								maxChars={2500}
-								error={motivationError}
-								rows={10}
-							/>
-							<div className="flex justify-end">
-								<Button
-									variant="primary"
-									onClick={handleSaveMotivation}
-									isLoading={savingMotivation}
-									disabled={motivationText.length < 1000 || motivationText.length > 2500}
-								>
-									Mentés
+								<Button variant="ghost" size="sm" onClick={handleLogout}>
+									Kijelentkezés
 								</Button>
 							</div>
+						</div>
+					</div>
+				</header>
+				
+				<main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+					{/* Period Info */}
+					<Card className="mb-8">
+						<CardContent className="py-6">
+							<div className="flex items-center justify-between">
+								<div>
+									<h1 className="text-2xl font-display font-bold text-surface-900">
+										{isApplicationStarted() ? 'Jelentkezésed folytatása' : 'Önkéntes képzés jelentkezés'}
+									</h1>
+									<p className="text-surface-600 mt-1">
+										Időszak: <span className="font-semibold text-primary-600">{period?.name}</span>
+										{isReadonly && (
+											<span className="ml-2 text-amber-600">(Csak olvasható - az időszak már nem aktív)</span>
+										)}
+									</p>
+								</div>
+								<div className="text-right">
+									<p className="text-sm text-surface-500">Állapot</p>
+									<Badge variant={
+										application?.status === 'submitted' ? 'success' :
+										application?.status === 'approved' ? 'success' :
+										application?.status === 'rejected' ? 'danger' :
+										'info'
+									}>
+										{application?.status === 'draft' && 'Részleges'}
+										{application?.status === 'submitted' && 'Végleges'}
+										{application?.status === 'under_review' && 'Elbírálás alatt'}
+										{application?.status === 'approved' && 'Elfogadva'}
+										{application?.status === 'rejected' && 'Elutasítva'}
+									</Badge>
+								</div>
+							</div>
 						</CardContent>
 					</Card>
 					
-					{/* Criminal Record */}
-					<Card>
-						<CardHeader>
-							<div className="flex items-center justify-between">
-								<h2 className="text-lg font-semibold text-surface-900">Erkölcsi bizonyítvány</h2>
-								{isDocumentUploaded('criminal_record') && (
-									<Badge variant="success">Feltöltve</Badge>
-								)}
+					{/* Readonly Warning */}
+					{isReadonly && (
+						<div className="mb-6 p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+							<div className="flex items-center gap-2">
+								<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+								</svg>
+								<span className="font-medium">Ez az időszak már nem aktív</span>
 							</div>
-						</CardHeader>
-						<CardContent>
-							<FileUpload
-								label=""
-								description="Töltsd fel a hatósági erkölcsi bizonyítvány másolatát"
-								onUpload={(file) => handleFileUpload(file, 'criminal_record')}
-								uploadedUrl={application?.criminal_record_url}
-								uploadedAt={application?.criminal_record_uploaded_at}
-								isLoading={uploadingDoc === 'criminal_record'}
-							/>
+							<p className="text-sm mt-1">A jelentkezésed megtekinthető, de új dokumentumok feltöltése már nem lehetséges.</p>
+						</div>
+					)}
+					
+					{/* Already Submitted Message */}
+					{application?.status === 'submitted' && (
+						<div className="mb-6 p-4 rounded-xl bg-green-50 border border-green-200 text-green-800">
+							<div className="flex items-center gap-2">
+								<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+								</svg>
+								<span className="font-medium">A jelentkezésed véglegesítve!</span>
+							</div>
+							<p className="text-sm mt-1">A jelentkezésed ellenőrzés alatt áll. Hamarosan értesítünk.</p>
+						</div>
+					)}
+					
+					{/* Documents */}
+					<div className="space-y-6">
+						{/* CV */}
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<h2 className="text-lg font-semibold text-surface-900">Önéletrajz (CV)</h2>
+									{isDocumentUploaded('cv') && (
+										<Badge variant="success">Feltöltve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent>
+								<FileUpload
+									label=""
+									description="Töltsd fel az önéletrajzodat PDF vagy képformátumban"
+									onUpload={(file) => handleFileUpload(file, 'cv')}
+									uploadedUrl={application?.cv_url}
+									uploadedAt={application?.cv_uploaded_at}
+									isLoading={uploadingDoc === 'cv'}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+							</CardContent>
+						</Card>
+						
+						{/* Recommendation Letter 1 */}
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<h2 className="text-lg font-semibold text-surface-900">1. Ajánlólevél</h2>
+									{isDocumentUploaded('recommendation') && (
+										<Badge variant="success">Feltöltve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent>
+								<FileUpload
+									label=""
+									description="Töltsd fel az első ajánlólevelet. A sablon letölthető a bal oldalon."
+									onUpload={(file) => handleFileUpload(file, 'recommendation')}
+									uploadedUrl={application?.recommendation_url}
+									uploadedAt={application?.recommendation_uploaded_at}
+									templateUrl="/templates/ajanlolevely-sablon.pdf"
+									templateLabel="Sablon letöltése"
+									isLoading={uploadingDoc === 'recommendation'}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+							</CardContent>
+						</Card>
+						
+						{/* Recommendation Letter 2 */}
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<h2 className="text-lg font-semibold text-surface-900">2. Ajánlólevél</h2>
+									{isDocumentUploaded('recommendation_2') && (
+										<Badge variant="success">Feltöltve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent>
+								<FileUpload
+									label=""
+									description="Töltsd fel a második ajánlólevelet. A sablon letölthető a bal oldalon."
+									onUpload={(file) => handleFileUpload(file, 'recommendation_2')}
+									uploadedUrl={application?.recommendation_url_2}
+									uploadedAt={application?.recommendation_uploaded_at_2}
+									templateUrl="/templates/ajanlolevely-sablon.pdf"
+									templateLabel="Sablon letöltése"
+									isLoading={uploadingDoc === 'recommendation_2'}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+							</CardContent>
+						</Card>
+						
+						{/* Motivation Letter */}
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<h2 className="text-lg font-semibold text-surface-900">Motivációs levél</h2>
+									{isDocumentUploaded('motivation') && (
+										<Badge variant="success">Mentve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent className="space-y-4">
+								<Textarea
+									label=""
+									placeholder="Írd meg a motivációs leveledet... (minimum 1000, maximum 2500 karakter)"
+									value={motivationText}
+									onChange={(e) => setMotivationText(e.target.value)}
+									charCount={motivationText.length}
+									minChars={1000}
+									maxChars={2500}
+									error={motivationError}
+									rows={10}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+								{!isReadonly && application?.status !== 'submitted' && (
+									<div className="flex justify-end">
+										<Button
+											variant="primary"
+											onClick={handleSaveMotivation}
+											isLoading={savingMotivation}
+											disabled={motivationText.length < 1000 || motivationText.length > 2500}
+										>
+											Mentés
+										</Button>
+									</div>
+								)}
+							</CardContent>
+						</Card>
+						
+						{/* Criminal Record */}
+						<Card>
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<h2 className="text-lg font-semibold text-surface-900">Erkölcsi bizonyítvány</h2>
+									{isDocumentUploaded('criminal_record') && (
+										<Badge variant="success">Feltöltve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent>
+								<FileUpload
+									label=""
+									description="Töltsd fel a hatósági erkölcsi bizonyítvány másolatát"
+									onUpload={(file) => handleFileUpload(file, 'criminal_record')}
+									uploadedUrl={application?.criminal_record_url}
+									uploadedAt={application?.criminal_record_uploaded_at}
+									isLoading={uploadingDoc === 'criminal_record'}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+							</CardContent>
+						</Card>
+						
+						{/* Criminal Record Request - OPTIONAL */}
+						<Card className="border-dashed border-surface-300">
+							<CardHeader>
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-2">
+										<h2 className="text-lg font-semibold text-surface-900">Erkölcsi bizonyítvány igénylés igazolása</h2>
+										<Badge variant="info">Opcionális</Badge>
+									</div>
+									{isDocumentUploaded('criminal_record_request') && (
+										<Badge variant="success">Feltöltve</Badge>
+									)}
+								</div>
+							</CardHeader>
+							<CardContent>
+								<FileUpload
+									label=""
+									description="Ha az erkölcsi bizonyítvány még nem érkezett meg, itt feltöltheted az igénylés igazolását. Ez a mező nem kötelező."
+									onUpload={(file) => handleFileUpload(file, 'criminal_record_request')}
+									uploadedUrl={application?.criminal_record_request_url}
+									uploadedAt={application?.criminal_record_request_uploaded_at}
+									isLoading={uploadingDoc === 'criminal_record_request'}
+									disabled={isReadonly || application?.status === 'submitted'}
+								/>
+							</CardContent>
+						</Card>
+					</div>
+					
+					{/* Summary & Submit */}
+					<Card className="mt-8">
+						<CardContent className="py-6">
+							<div className="flex items-center justify-between">
+								<div>
+									<h3 className="font-semibold text-surface-900">Összesítő</h3>
+									<p className="text-sm text-surface-600 mt-1">
+										{isAllRequiredUploaded()
+											? 'Minden kötelező dokumentum feltöltve!'
+											: `Még ${REQUIRED_DOC_COUNT - getRequiredUploadedCount()} kötelező dokumentum hiányzik`}
+									</p>
+								</div>
+								<div className="flex gap-2">
+									{
+										[
+											{ key: 'cv', label: 'CV' },
+											{ key: 'recommendation', label: 'Ajánló 1' },
+											{ key: 'recommendation_2', label: 'Ajánló 2' },
+											{ key: 'motivation', label: 'Motiváció' },
+											{ key: 'criminal_record', label: 'Erkölcsi' },
+										].map(({ key, label }) => (
+											<div
+												key={key}
+												className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+													isDocumentUploaded(key as 'cv' | 'recommendation' | 'recommendation_2' | 'motivation' | 'criminal_record')
+														? 'bg-accent-100 text-accent-600'
+														: 'bg-surface-100 text-surface-400'
+												}`}
+												title={label}
+											>
+												{isDocumentUploaded(key as 'cv' | 'recommendation' | 'recommendation_2' | 'motivation' | 'criminal_record') ? (
+													<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+													</svg>
+												) : (
+													<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+													</svg>
+												)}
+											</div>
+										))}
+								</div>
+							</div>
+							
+							{/* Submit Button - Always visible when not readonly and not already submitted */}
+							{!isReadonly && application?.status === 'draft' && (
+								<div className="mt-6 pt-6 border-t border-surface-200">
+									<div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+										<div className="text-sm text-surface-600">
+											{!isAllRequiredUploaded() ? (
+												<span className="text-amber-600">
+													⚠️ Figyelem: A jelentkezésed hiányos. Részleges mentés után még módosítható.
+												</span>
+											) : (
+												<span className="text-green-600">
+													✓ Minden kötelező dokumentum feltöltve. Készen állsz a beküldésre!
+												</span>
+											)}
+										</div>
+										<Button
+											variant={isAllRequiredUploaded() ? 'success' : 'primary'}
+											size="lg"
+											onClick={handleSubmitApplication}
+											isLoading={isSubmitting}
+										>
+											{isAllRequiredUploaded() ? 'Jelentkezés véglegesítése' : 'Részleges mentés'}
+										</Button>
+									</div>
+								</div>
+							)}
 						</CardContent>
 					</Card>
-				</div>
-				
-				{/* Summary */}
-				<Card className="mt-8">
-					<CardContent className="py-6">
-						<div className="flex items-center justify-between">
-							<div>
-								<h3 className="font-semibold text-surface-900">Összesítő</h3>
-								<p className="text-sm text-surface-600 mt-1">
-									{getUploadedCount() === 4
-										? 'Minden dokumentum feltöltve!'
-										: `Még ${4 - getUploadedCount()} dokumentum hiányzik`}
-								</p>
-							</div>
-							<div className="flex gap-2">
-								{[
-									{ key: 'cv', label: 'CV' },
-									{ key: 'recommendation', label: 'Ajánló' },
-									{ key: 'motivation', label: 'Motiváció' },
-									{ key: 'criminal_record', label: 'Erkölcsi' },
-								].map(({ key, label }) => (
-									<div
-										key={key}
-										className={`w-10 h-10 rounded-lg flex items-center justify-center ${
-											isDocumentUploaded(key as any)
-												? 'bg-accent-100 text-accent-600'
-												: 'bg-surface-100 text-surface-400'
-										}`}
-										title={label}
-									>
-										{isDocumentUploaded(key as any) ? (
-											<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-											</svg>
-										) : (
-											<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-												<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-											</svg>
-										)}
-									</div>
-								))}
-							</div>
-						</div>
-					</CardContent>
-				</Card>
-			</main>
-		</div>
+				</main>
+			</div>
+			</>
+		</Suspense>
 	)
+}
+
+export default function ApplyPage() {
+  return (
+    <Suspense>
+      <ApplyPageInner />
+    </Suspense>
+  )
 }

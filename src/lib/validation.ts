@@ -18,6 +18,21 @@ export const periodSchema = z.object({
 	endDate: z.string().optional(),
 })
 
+export const createAdminSchema = z.object({
+	email: z.string().email('Érvénytelen email cím'),
+	password: z.string().min(6, 'A jelszónak legalább 6 karakter hosszúnak kell lennie'),
+	name: z.string().min(2, 'A névnek legalább 2 karakter hosszúnak kell lennie'),
+})
+
+export const changePasswordSchema = z.object({
+	currentPassword: z.string().min(1, 'A jelenlegi jelszó megadása kötelező'),
+	newPassword: z.string().min(6, 'Az új jelszónak legalább 6 karakter hosszúnak kell lennie'),
+	confirmPassword: z.string().min(1, 'A jelszó megerősítése kötelező'),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+	message: 'A jelszavak nem egyeznek',
+	path: ['confirmPassword'],
+})
+
 export const motivationLetterSchema = z.object({
 	content: z.string()
 		.min(1000, 'A motivációs levélnek legalább 1000 karakter hosszúnak kell lennie')

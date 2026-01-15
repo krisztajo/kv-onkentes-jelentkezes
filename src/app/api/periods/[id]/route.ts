@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAdmin } from '@/lib/auth'
-import { getPeriodById, deletePeriod, setActivePeriod } from '@/lib/db'
+import { getPeriodById, deletePeriod, setActivePeriod, deactivatePeriod } from '@/lib/db'
 
 export const runtime = 'edge'
 
@@ -40,10 +40,12 @@ export async function PATCH(
 		await requireAdmin()
 		
 		const { id } = await params
-		const body = await request.json() as { setActive?: boolean }
+		const body = await request.json() as { setActive?: boolean; deactivate?: boolean }
 		
 		if (body.setActive) {
 			await setActivePeriod(parseInt(id))
+		} else if (body.deactivate) {
+			await deactivatePeriod(parseInt(id))
 		}
 		
 		const period = await getPeriodById(parseInt(id))
