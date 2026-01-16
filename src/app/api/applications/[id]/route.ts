@@ -66,13 +66,13 @@ export async function PATCH(
 			)
 		}
 		
-		const body = await request.json() as { status?: Application['status'] }
+		const body = await request.json() as { status?: Application['status'], declarations?: Record<string, boolean> }
 		
-		// Allow admins to update any application, or users to submit their own applications
+		// Allow admins to update any application, or users to update their own applications
 		const isAdmin = user.role === 'admin'
-		const isOwnerSubmitting = application.user_id === user.id && body.status === 'submitted'
+		const isOwner = application.user_id === user.id
 		
-		if (!isAdmin && !isOwnerSubmitting) {
+		if (!isAdmin && !isOwner) {
 			return NextResponse.json(
 				{ success: false, error: 'Nincs jogosultságod ehhez a művelethez' },
 				{ status: 403 }
@@ -81,6 +81,11 @@ export async function PATCH(
 		
 		if (body.status) {
 			await updateApplicationStatus(parseInt(id), body.status)
+		}
+		
+		if (body.declarations) {
+			const { updateApplicationDeclarations } = await import('@/lib/db')
+			await updateApplicationDeclarations(parseInt(id), body.declarations)
 		}
 		
 		const updatedApplication = await getApplicationById(parseInt(id))

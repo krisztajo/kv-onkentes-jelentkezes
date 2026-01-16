@@ -35,6 +35,7 @@ export interface Application {
 	criminal_record_uploaded_at: string | null
 	criminal_record_request_url: string | null
 	criminal_record_request_uploaded_at: string | null
+	declarations: Record<string, boolean> | null
 	status: 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected'
 	created_at: string
 	updated_at: string

@@ -217,7 +217,7 @@ export default async function HomePage() {
                   </svg>
                 </div>
                 <h3 className="font-semibold text-surface-900 mb-2">
-                  Ajánlólevél
+                  2 Ajánlólevél
                 </h3>
                 <p className="text-sm text-surface-500">
                   Sablon letölthető az űrlapon

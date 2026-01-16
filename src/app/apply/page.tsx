@@ -30,6 +30,13 @@ function ApplyPageInner() {
 	const [submitSuccess, setSubmitSuccess] = useState(false)
 	const [showSuccessModal, setShowSuccessModal] = useState(false)
 	const [successModalMessage, setSuccessModalMessage] = useState('')
+	const [declarations, setDeclarations] = useState<Record<string, boolean>>({
+		nyilatkozat1: false,
+		nyilatkozat2: false,
+		nyilatkozat3: false,
+		nyilatkozat4: false,
+		nyilatkozat5: false,
+	})
 	
 	useEffect(() => {
 		async function loadData() {
@@ -69,6 +76,17 @@ function ApplyPageInner() {
 				setApplication(appData.data?.application || null)
 				setMotivationText(appData.data?.application?.motivation_letter || '')
 				setIsReadonly(appData.data?.readonly || false)
+				
+				// Set declarations from database
+				if (appData.data?.application?.declarations) {
+					setDeclarations({
+						nyilatkozat1: appData.data.application.declarations.nyilatkozat1 ?? false,
+						nyilatkozat2: appData.data.application.declarations.nyilatkozat2 ?? false,
+						nyilatkozat3: appData.data.application.declarations.nyilatkozat3 ?? false,
+						nyilatkozat4: appData.data.application.declarations.nyilatkozat4 ?? false,
+						nyilatkozat5: appData.data.application.declarations.nyilatkozat5 ?? false,
+					})
+				}
 			} catch (err) {
 				setError('Hiba történt az adatok betöltésekor')
 			} finally {
@@ -168,24 +186,54 @@ function ApplyPageInner() {
 	const handleSubmitApplication = async () => {
 		if (!application || isReadonly) return
 		
+		const allDeclarationsChecked = Object.values(declarations).every(Boolean)
+		const allDocsUploaded = isAllRequiredUploaded()
+		const canFinalize = allDeclarationsChecked && allDocsUploaded
+		
+		// Ha minden dokumentum megvan, de nincs minden nyilatkozat bepipálva
+		if (allDocsUploaded && !allDeclarationsChecked) {
+			alert('Kérjük, pipáld be az összes nyilatkozatot a véglegesítés előtt!')
+			return
+		}
+		
 		setIsSubmitting(true)
 		
 		try {
+			const payload: { status?: string; declarations: Record<string, boolean> } = {
+				declarations: declarations
+			}
+			
+			// Csak akkor véglegesítse, ha minden dokumentum és nyilatkozat megvan
+			if (canFinalize) {
+				payload.status = 'submitted'
+			}
+			
 			const res = await fetch(`/api/applications/${application.id}`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ status: 'submitted' }),
+				body: JSON.stringify(payload),
 			})
 			
 			const data = await res.json() as { success: boolean; data?: Application }
 			
 			if (data.success && data.data) {
 				setApplication(data.data)
-				setSubmitSuccess(true)
-				// Ha minden kötelező dokumentum megvan, "véglegesítés", különben "mentés"
-				const allDocsUploaded = data.data.cv_url && data.data.recommendation_url && 
-					data.data.recommendation_url_2 && data.data.motivation_letter && data.data.criminal_record_url
-				setSuccessModalMessage(allDocsUploaded ? 'Sikeres véglegesítés!' : 'Sikeres mentés!')
+				// Update declarations state from returned data
+				if (data.data.declarations) {
+					setDeclarations({
+						nyilatkozat1: data.data.declarations.nyilatkozat1 ?? false,
+						nyilatkozat2: data.data.declarations.nyilatkozat2 ?? false,
+						nyilatkozat3: data.data.declarations.nyilatkozat3 ?? false,
+						nyilatkozat4: data.data.declarations.nyilatkozat4 ?? false,
+						nyilatkozat5: data.data.declarations.nyilatkozat5 ?? false,
+					})
+				}
+				if (canFinalize) {
+					setSubmitSuccess(true)
+					setSuccessModalMessage('Sikeres véglegesítés!')
+				} else {
+					setSuccessModalMessage('Részleges mentés sikeres!')
+				}
 				setShowSuccessModal(true)
 			}
 		} catch (err) {
@@ -270,32 +318,6 @@ function ApplyPageInner() {
 			</div>
 		)
 	}
-	
-	// Success state after submission
-	/*if (submitSuccess && application?.status === 'submitted') {
-		return (
-			<div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-surface-50 via-primary-50/30 to-accent-50/20">
-				<Card className="max-w-md text-center">
-					<CardContent className="pt-8 pb-8">
-						<div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-6">
-							<svg className="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-							</svg>
-						</div>
-						<h2 className="text-2xl font-bold text-surface-900 mb-2">Jelentkezésed beküldve!</h2>
-						<p className="text-surface-600 mb-6">
-							Köszönjük a jelentkezésedet. Hamarosan értesítünk a döntésről.
-						</p>
-						<Link href="/">
-							<Button variant="primary">
-								Vissza a főoldalra
-							</Button>
-						</Link>
-					</CardContent>
-				</Card>
-			</div>
-		)
-	}*/
 	
 	type SuccessModalProps = {
 		open: boolean;
@@ -596,6 +618,80 @@ function ApplyPageInner() {
 						</Card>
 					</div>
 					
+					{/* Declarations */}
+					<Card className="mt-6">
+						<CardHeader>
+							<h2 className="text-lg font-semibold text-surface-900">Nyilatkozatok</h2>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="nyilatkozat1"
+									checked={declarations.nyilatkozat1}
+									onChange={() => setDeclarations(prev => ({ ...prev, nyilatkozat1: !prev.nyilatkozat1 }))}
+									disabled={isReadonly || application?.status === 'submitted'}
+									className="mt-1 w-4 h-4 text-green-600 border-surface-300 rounded focus:ring-green-500"
+								/>
+								<label htmlFor="nyilatkozat1" className="text-sm text-surface-700 cursor-pointer">
+									Nyilatkozat 1: Elfogadom a részvételi feltételeket.
+								</label>
+							</div>
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="nyilatkozat2"
+									checked={declarations.nyilatkozat2}
+									onChange={() => setDeclarations(prev => ({ ...prev, nyilatkozat2: !prev.nyilatkozat2 }))}
+									disabled={isReadonly || application?.status === 'submitted'}
+									className="mt-1 w-4 h-4 text-green-600 border-surface-300 rounded focus:ring-green-500"
+								/>
+								<label htmlFor="nyilatkozat2" className="text-sm text-surface-700 cursor-pointer">
+									Nyilatkozat 2: Nyilatkozom, hogy havi 3 alkalommal tudok vállalni önkénteskedést.
+								</label>
+							</div>
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="nyilatkozat3"
+									checked={declarations.nyilatkozat3}
+									onChange={() => setDeclarations(prev => ({ ...prev, nyilatkozat3: !prev.nyilatkozat3 }))}
+									disabled={isReadonly || application?.status === 'submitted'}
+									className="mt-1 w-4 h-4 text-green-600 border-surface-300 rounded focus:ring-green-500"
+								/>
+								<label htmlFor="nyilatkozat3" className="text-sm text-surface-700 cursor-pointer">
+									Nyilatkozat 3: Elfogadom az adatvédelmi szabályokat.
+								</label>
+							</div>
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="nyilatkozat4"
+									checked={declarations.nyilatkozat4}
+									onChange={() => setDeclarations(prev => ({ ...prev, nyilatkozat4: !prev.nyilatkozat4 }))}
+									disabled={isReadonly || application?.status === 'submitted'}
+									className="mt-1 w-4 h-4 text-green-600 border-surface-300 rounded focus:ring-green-500"
+								/>
+								<label htmlFor="nyilatkozat4" className="text-sm text-surface-700 cursor-pointer">
+									Nyilatkozat 4: Még valami fontos dolog, amit el kell fogadnom.
+								</label>
+							</div>
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="nyilatkozat5"
+									checked={declarations.nyilatkozat5}
+									onChange={() => setDeclarations(prev => ({ ...prev, nyilatkozat5: !prev.nyilatkozat5 }))}
+									disabled={isReadonly || application?.status === 'submitted'}
+									className="mt-1 w-4 h-4 text-green-600 border-surface-300 rounded focus:ring-green-500"
+								/>
+								<label htmlFor="nyilatkozat5" className="text-sm text-surface-700 cursor-pointer">
+									Nyilatkozat 5: Tudomásul veszem a képzés időpontját és helyszínét.
+								</label>
+							</div>
+						</CardContent>
+					</Card>
+					
 					{/* Summary & Submit */}
 					<Card className="mt-8">
 						<CardContent className="py-6">
@@ -647,21 +743,25 @@ function ApplyPageInner() {
 										<div className="text-sm text-surface-600">
 											{!isAllRequiredUploaded() ? (
 												<span className="text-amber-600">
-													⚠️ Figyelem: A jelentkezésed hiányos. Részleges mentés után még módosítható.
+													⚠️ Figyelem: Még {REQUIRED_DOC_COUNT - getRequiredUploadedCount()} dokumentum hiányzik.
+												</span>
+											) : !Object.values(declarations).every(Boolean) ? (
+												<span className="text-amber-600">
+													⚠️ Figyelem: Nem minden nyilatkozat van bepipálva.
 												</span>
 											) : (
 												<span className="text-green-600">
-													✓ Minden kötelező dokumentum feltöltve. Készen állsz a beküldésre!
+													✓ Minden feltétel teljesült! Készen állsz a véglegesítésre!
 												</span>
 											)}
 										</div>
 										<Button
-											variant={isAllRequiredUploaded() ? 'success' : 'primary'}
+											variant={isAllRequiredUploaded() && Object.values(declarations).every(Boolean) ? 'success' : 'primary'}
 											size="lg"
 											onClick={handleSubmitApplication}
 											isLoading={isSubmitting}
 										>
-											{isAllRequiredUploaded() ? 'Jelentkezés véglegesítése' : 'Részleges mentés'}
+											{isAllRequiredUploaded() && Object.values(declarations).every(Boolean) ? 'Jelentkezés véglegesítése' : 'Részleges mentés'}
 										</Button>
 									</div>
 								</div>

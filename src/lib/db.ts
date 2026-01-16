@@ -164,16 +164,40 @@ export async function getUserApplications(userId: number): Promise<Application[]
 		`)
 		.bind(userId)
 		.all<Application & { period_name: string; period_is_active: number }>()
-	return result.results || []
+	
+	const applications = result.results || []
+	
+	// Parse JSON declarations for each application
+	applications.forEach(app => {
+		if (app.declarations && typeof app.declarations === 'string') {
+			try {
+				app.declarations = JSON.parse(app.declarations as string)
+			} catch {
+				app.declarations = null
+			}
+		}
+	})
+	
+	return applications
 }
 
 // Application queries
 export async function getApplicationByUserAndPeriod(userId: number, periodId: number): Promise<Application | null> {
 	const db = getDB()
-	return await db
+	const result = await db
 		.prepare('SELECT * FROM applications WHERE user_id = ? AND period_id = ?')
 		.bind(userId, periodId)
 		.first<Application>()
+	
+	if (result && result.declarations && typeof result.declarations === 'string') {
+		try {
+			result.declarations = JSON.parse(result.declarations as string)
+		} catch {
+			result.declarations = null
+		}
+	}
+	
+	return result
 }
 
 export async function createApplication(userId: number, periodId: number): Promise<Application> {
@@ -247,6 +271,14 @@ export async function updateApplicationStatus(applicationId: number, status: App
 		.run()
 }
 
+export async function updateApplicationDeclarations(applicationId: number, declarations: Record<string, boolean>): Promise<void> {
+	const db = getDB()
+	await db
+		.prepare('UPDATE applications SET declarations = ?, updated_at = ? WHERE id = ?')
+		.bind(JSON.stringify(declarations), new Date().toISOString(), applicationId)
+		.run()
+}
+
 export async function getApplicationsByPeriod(periodId: number): Promise<ApplicationWithUser[]> {
 	const db = getDB()
 	const result = await db
@@ -265,7 +297,20 @@ export async function getApplicationsByPeriod(periodId: number): Promise<Applica
 		.bind(periodId)
 		.all<ApplicationWithUser>()
 	
-	return result.results || []
+	const applications = result.results || []
+	
+	// Parse JSON declarations for each application
+	applications.forEach(app => {
+		if (app.declarations && typeof app.declarations === 'string') {
+			try {
+				app.declarations = JSON.parse(app.declarations as string)
+			} catch {
+				app.declarations = null
+			}
+		}
+	})
+	
+	return applications
 }
 
 export async function getAllApplications(): Promise<ApplicationWithUser[]> {
@@ -284,12 +329,25 @@ export async function getAllApplications(): Promise<ApplicationWithUser[]> {
 		`)
 		.all<ApplicationWithUser>()
 	
-	return result.results || []
+	const applications = result.results || []
+	
+	// Parse JSON declarations for each application
+	applications.forEach(app => {
+		if (app.declarations && typeof app.declarations === 'string') {
+			try {
+				app.declarations = JSON.parse(app.declarations as string)
+			} catch {
+				app.declarations = null
+			}
+		}
+	})
+	
+	return applications
 }
 
 export async function getApplicationById(id: number): Promise<ApplicationWithUser | null> {
 	const db = getDB()
-	return await db
+	const result = await db
 		.prepare(`
 			SELECT 
 				a.*,
@@ -303,4 +361,14 @@ export async function getApplicationById(id: number): Promise<ApplicationWithUse
 		`)
 		.bind(id)
 		.first<ApplicationWithUser>()
+	
+	if (result && result.declarations && typeof result.declarations === 'string') {
+		try {
+			result.declarations = JSON.parse(result.declarations as string)
+		} catch {
+			result.declarations = null
+		}
+	}
+	
+	return result
 }

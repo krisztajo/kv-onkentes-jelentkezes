@@ -47,3 +47,6 @@ next-env.d.ts
 # D1 local database
 *.sqlite
 *.sqlite-journal
+
+#doc
+doc/
