@@ -37,7 +37,7 @@ function LoginPageInner() {
 			}
 			
 			// Redirect based on role and period
-			if (data.user?.role === 'admin') {
+			if (data.user?.role === 'admin' || data.user?.role === 'superadmin') {
 				router.push('/admin')
 			} else if (period) {
 				router.push(`/apply?period=${period}`)

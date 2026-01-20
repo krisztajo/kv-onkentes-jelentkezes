@@ -116,8 +116,8 @@ export default function ProfilePage() {
 						
 						<div className="flex items-center gap-4">
 							<span className="text-sm text-surface-600">{user?.name}</span>
-							<Badge variant={user?.role === 'admin' ? 'info' : 'neutral'}>
-								{user?.role === 'admin' ? 'Admin' : 'Jelentkező'}
+							<Badge variant={(user?.role === 'admin' || user?.role === 'superadmin') ? 'info' : 'neutral'}>
+								{(user?.role === 'admin' || user?.role === 'superadmin') ? 'Admin' : 'Jelentkező'}
 							</Badge>
 							<Button variant="ghost" size="sm" onClick={handleLogout}>
 								Kijelentkezés
@@ -146,7 +146,7 @@ export default function ProfilePage() {
 							<div>
 								<label className="text-sm font-medium text-surface-600">Szerepkör</label>
 								<p className="text-surface-900 mt-1">
-									{user?.role === 'admin' ? 'Adminisztrátor' : 'Jelentkező'}
+									{(user?.role === 'admin' || user?.role === 'superadmin') ? 'Adminisztrátor' : 'Jelentkező'}
 								</p>
 							</div>
 							<div>
@@ -225,7 +225,7 @@ export default function ProfilePage() {
 							Vissza a főoldalra
 						</Button>
 					</Link>
-					{user?.role === 'admin' && (
+					{(user?.role === 'admin' || user?.role === 'superadmin') && (
 						<Link href="/admin">
 							<Button variant="primary">
 								Admin felület

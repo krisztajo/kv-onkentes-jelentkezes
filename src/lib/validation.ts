@@ -22,6 +22,7 @@ export const createAdminSchema = z.object({
 	email: z.string().email('Érvénytelen email cím'),
 	password: z.string().min(6, 'A jelszónak legalább 6 karakter hosszúnak kell lennie'),
 	name: z.string().min(2, 'A névnek legalább 2 karakter hosszúnak kell lennie'),
+	role: z.enum(['admin', 'superadmin']).optional(),
 })
 
 export const changePasswordSchema = z.object({

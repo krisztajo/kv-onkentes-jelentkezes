@@ -43,7 +43,7 @@ export function Header({ user }: HeaderProps) {
 					<nav className="flex items-center gap-4">
 						{user ? (
 							<>
-								{user.role === 'admin' && (
+								{(user.role === 'admin' || user.role === 'superadmin') && (
 									<Link
 										href="/admin"
 										className="text-surface-600 hover:text-surface-900 font-medium transition-colors"

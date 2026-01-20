@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
 		const periodId = searchParams.get('periodId')
 		
 		// Admin can view all applications
-		if (user.role === 'admin') {
+		if (user.role === 'admin' || user.role === 'superadmin') {
 			let applications
 			if (periodId) {
 				applications = await getApplicationsByPeriod(parseInt(periodId))

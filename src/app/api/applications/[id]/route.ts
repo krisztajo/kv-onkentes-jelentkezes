@@ -23,7 +23,7 @@ export async function GET(
 		}
 		
 		// Users can only view their own applications, admins can view all
-		if (user.role !== 'admin' && application.user_id !== user.id) {
+		if ((user.role !== 'admin' && user.role !== 'superadmin') && application.user_id !== user.id) {
 			return NextResponse.json(
 				{ success: false, error: 'Nincs jogosultságod ehhez a művelethez' },
 				{ status: 403 }
@@ -69,7 +69,7 @@ export async function PATCH(
 		const body = await request.json() as { status?: Application['status'], declarations?: Record<string, boolean> }
 		
 		// Allow admins to update any application, or users to update their own applications
-		const isAdmin = user.role === 'admin'
+		const isAdmin = user.role === 'admin' || user.role === 'superadmin'
 		const isOwner = application.user_id === user.id
 		
 		if (!isAdmin && !isOwner) {

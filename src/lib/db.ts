@@ -119,6 +119,33 @@ export async function deactivatePeriod(id: number): Promise<void> {
 
 export async function deletePeriod(id: number): Promise<void> {
 	const db = getDB()
+	
+	// Get period to find its slug
+	const period = await getPeriodById(id)
+	if (!period) {
+		throw new Error('Period not found')
+	}
+	
+	// Delete all files in R2 for this period
+	try {
+		const r2 = getR2()
+		const prefix = `${period.slug}/`
+		
+		// List all objects with this prefix
+		const listed = await r2.list({ prefix })
+		
+		// Delete all objects
+		if (listed.objects.length > 0) {
+			await Promise.all(
+				listed.objects.map(obj => r2.delete(obj.key))
+			)
+		}
+	} catch (error) {
+		console.error('Error deleting R2 files for period:', error)
+		// Continue with database deletion even if R2 deletion fails
+	}
+	
+	// Delete period from database (will cascade delete applications)
 	await db.prepare('DELETE FROM periods WHERE id = ?').bind(id).run()
 }
 
@@ -131,17 +158,25 @@ export async function getAllUsers(): Promise<User[]> {
 	return result.results || []
 }
 
-export async function createAdminUser(email: string, passwordHash: string, name: string): Promise<User> {
+export async function createAdminUser(email: string, passwordHash: string, name: string, role: 'admin' | 'superadmin' = 'admin'): Promise<User> {
 	const db = getDB()
 	const result = await db
 		.prepare('INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?) RETURNING id, email, name, role, created_at, updated_at')
-		.bind(email, passwordHash, name, 'admin')
+		.bind(email, passwordHash, name, role)
 		.first<User>()
 	
 	if (!result) {
 		throw new Error('Failed to create admin user')
 	}
 	return result
+}
+
+export async function deleteUser(userId: number): Promise<void> {
+	const db = getDB()
+	await db
+		.prepare('DELETE FROM users WHERE id = ?')
+		.bind(userId)
+		.run()
 }
 
 export async function updateUserPassword(userId: number, newPasswordHash: string): Promise<void> {

@@ -26,7 +26,7 @@ export async function verifyToken(token: string): Promise<User | null> {
 			id: payload.id as number,
 			email: payload.email as string,
 			name: payload.name as string,
-			role: payload.role as 'applicant' | 'admin',
+			role: payload.role as 'applicant' | 'admin' | 'superadmin',
 			created_at: '',
 			updated_at: '',
 		}
@@ -54,9 +54,17 @@ export async function requireAuth(): Promise<User> {
 	return user
 }
 
+export async function requireSuperAdmin(): Promise<User> {
+	const user = await requireAuth()
+	if (user.role !== 'superadmin') {
+		throw new Error('Forbidden')
+	}
+	return user
+}
+
 export async function requireAdmin(): Promise<User> {
 	const user = await requireAuth()
-	if (user.role !== 'admin') {
+	if (user.role !== 'admin' && user.role !== 'superadmin') {
 		throw new Error('Forbidden')
 	}
 	return user

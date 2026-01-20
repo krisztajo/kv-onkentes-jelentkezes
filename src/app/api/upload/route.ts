@@ -89,9 +89,9 @@ export async function POST(request: NextRequest) {
 			)
 		}
 		
-		// Generate unique filename
+		// Generate unique filename with period-based folder structure
 		const ext = file.name.split('.').pop()
-		const filename = `${periodSlug}/${user.id}/${documentType}-${Date.now()}.${ext}`
+		const filename = `${periodSlug}/${user.id}-${documentType}-${Date.now()}.${ext}`
 		
 		// Upload to R2
 		const r2 = getR2()

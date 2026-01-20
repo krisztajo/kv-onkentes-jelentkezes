@@ -59,7 +59,7 @@ export default async function HomePage() {
                   </div>
                 )}
 
-                {user?.role === "admin" && (
+                {(user?.role === "admin" || user?.role === "superadmin") && (
                   <Link href="/admin">
                     <Button variant="secondary" size="lg">
                       Admin felület

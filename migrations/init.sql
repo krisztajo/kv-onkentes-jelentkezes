@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS users (
 	email TEXT UNIQUE NOT NULL,
 	password_hash TEXT NOT NULL,
 	name TEXT NOT NULL,
-	role TEXT DEFAULT 'applicant' CHECK (role IN ('applicant', 'admin')),
+	role TEXT DEFAULT 'applicant' CHECK (role IN ('applicant', 'admin', 'superadmin')),
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -59,4 +59,4 @@ CREATE INDEX IF NOT EXISTS idx_periods_slug ON periods(slug);
 
 -- Insert default admin user (password: admin123 - change in production!)
 INSERT OR IGNORE INTO users (email, password_hash, name, role)
-VALUES ('admin@example.com', 'hash_20077bcf11fef53e', 'Admin', 'admin');
+VALUES ('superadmin@example.com', 'hash_20077bcf11fef53e', 'Super Admin', 'superadmin');
