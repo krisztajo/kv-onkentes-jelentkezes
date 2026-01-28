@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -15,7 +15,7 @@ import type { Period, ApplicationWithUser } from '@/types'
 
 type TabType = 'applications' | 'periods' | 'users'
 
-export default function AdminPage() {
+function AdminPageContent() {
 	const router = useRouter()
 	const searchParams = useSearchParams()
 	const { user, periods, users, loading, loadUsers, setPeriods } = useAdminData()
@@ -32,6 +32,9 @@ export default function AdminPage() {
 	const [newPeriod, setNewPeriod] = useState({ name: '', slug: '' })
 	const autoSlug = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '-').replace(/\//g, '-').replace(/[^a-z0-9-]/g, '');
 	const [creatingPeriod, setCreatingPeriod] = useState(false)
+
+	// Database migration
+	const [isMigrating, setIsMigrating] = useState(false)
 
 	// Check auth and redirect if not admin
 	useEffect(() => {
@@ -197,6 +200,60 @@ export default function AdminPage() {
 		router.refresh()
 	}
 
+	const handleMigration = async () => {
+		if (!confirm('Biztosan futtassuk az adatbázis migrációt? Ez ellenőrzi és frissíti a séma változásait.')) return;
+
+		setIsMigrating(true);
+
+		try {
+			// 1. Próbáljuk a migrate-db-t
+			let res = await fetch('/api/admin/migrate-db', { method: 'POST' });
+			let data = await res.json() as {
+				success: boolean;
+				data?: { message: string; migrations: string[] };
+				error?: string;
+			};
+
+			// Ha nincs adatbázis vagy tábla, próbáljuk az init-db-t
+			if (!data.success && data.error && (
+				data.error.includes('no such table') ||
+				data.error.includes('DB binding nem található') ||
+				data.error.includes('no such column')
+			)) {
+				const initRes = await fetch('/api/admin/init-db', { method: 'POST' });
+				const initData = await initRes.json() as {
+					success: boolean;
+					data?: { message: string };
+					error?: string;
+				};
+				if (initData.success) {
+					alert('Adatbázis inicializálva!\n' + (initData.data?.message || ''));
+					// Próbáljuk újra a migrate-db-t
+					res = await fetch('/api/admin/migrate-db', { method: 'POST' });
+					data = await res.json();
+				} else {
+					alert(initData.error || 'Hiba történt az adatbázis inicializálásakor');
+					setIsMigrating(false);
+					return;
+				}
+			}
+
+			if (data.success && data.data) {
+				const migrationsList = data.data.migrations.length > 0
+					? '\n\nVégrehajtott változások:\n' + data.data.migrations.map(m => `• ${m}`).join('\n')
+					: '';
+				alert(data.data.message + migrationsList);
+			} else {
+				alert(data.error || 'Hiba történt a migráció során');
+			}
+		} catch (err) {
+			console.error('Migration error:', err);
+			alert('Hiba történt a migráció során');
+		} finally {
+			setIsMigrating(false);
+		}
+	}
+
 	const getDocumentCount = (app: ApplicationWithUser) => {
 		return [app.cv_url, app.recommendation_url, app.recommendation_url_2, app.motivation_letter, app.criminal_record_url]
 			.filter(Boolean).length
@@ -231,6 +288,17 @@ export default function AdminPage() {
 						</Link>
 						
 						<div className="flex items-center gap-4">
+							{user?.role === 'superadmin' && (
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={handleMigration}
+									isLoading={isMigrating}
+								>
+									🔄 Migráció
+								</Button>
+							)}
+							
 							<div className="flex items-center gap-2">
 								<label className="text-sm text-surface-600">Időszak:</label>
 								<select
@@ -449,5 +517,17 @@ export default function AdminPage() {
 			<ApplicationDetailModal application={selectedApplication} onClose={() => setSelectedApplication(null)} />
 			<CreateAdminModal isOpen={showCreateAdmin} onClose={() => setShowCreateAdmin(false)} onCreated={() => loadUsers(user)} />
 		</div>
+	)
+}
+
+export default function AdminPage() {
+	return (
+		<Suspense fallback={
+			<div className="min-h-screen flex items-center justify-center">
+				<div className="animate-spin w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full" />
+			</div>
+		}>
+			<AdminPageContent />
+		</Suspense>
 	)
 }

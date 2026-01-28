@@ -56,7 +56,3 @@ CREATE INDEX IF NOT EXISTS idx_applications_period_id ON applications(period_id)
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
 CREATE INDEX IF NOT EXISTS idx_periods_is_active ON periods(is_active);
 CREATE INDEX IF NOT EXISTS idx_periods_slug ON periods(slug);
-
--- Insert default admin user (password: admin123 - change in production!)
-INSERT OR IGNORE INTO users (email, password_hash, name, role)
-VALUES ('superadmin@example.com', 'hash_20077bcf11fef53e', 'Super Admin', 'superadmin');
